@@ -203,6 +203,8 @@
         onResize() {
           this.canvas.width = window.innerWidth
           this.canvas.height = window.innerHeight
+          this.tmp_canvas.width = window.innerWidth
+          this.tmp_canvas.height = window.innerHeight
         },
         tool(tool) {
           this.current.tool = tool
