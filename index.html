@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>canvas-smooth-line</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div id="app">
+    <div id="sketch">
+      <canvas class="whiteboard"></canvas>
+    </div>
+    
+    <div class="tool-list">
+      <button @click="changeLineWidth(3)">Thin</button>
+      <button @click="changeLineWidth(24)">Bold</button>
+
+      <button @click="changeColor(68, 68, 68)">Black</button>
+      <button @click="changeColor(255, 187, 187)">Red</button>
+
+      <button @click="tool(1)">Pen</button>
+      <button @click="tool(2)">Marker</button>
+      <button @click="tool(3)">Eraser</button>
+
+      <button @click="deleteCanvas()">Clear</button>
+
+      <button @click="download()">Download</button>
+    </div>
+  </div>
+  
+  <!-- Loading Vue.js -->
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+  <script>
+    var app = new Vue({
+      el: '#app',
+      data: {
+        canvas: '',
+        context: '',
+        tmp_canvas: '',
+        tmp_context: '',
+        drawing: false,
+        current: {
+          tool: '',
+          line_width: 0,
+          color: {
+            rgba: '',
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0
+          }
+        },
+        points: []
+      },
+      mounted() {
+        this.canvas = document.getElementsByClassName('whiteboard')[0]
+        this.context = this.canvas.getContext('2d')
+
+        // Window resize
+        window.addEventListener('resize', this.onResize, false)
+        this.onResize()
+
+        // Create tmp canvas
+        this.tmp_canvas = document.createElement('canvas')
+        this.tmp_context = this.tmp_canvas.getContext('2d')
+        this.tmp_canvas.classList.add('whiteboard')
+        this.tmp_canvas.width = this.canvas.width
+        this.tmp_canvas.height = this.canvas.height
+        const sketch = document.querySelector('#sketch')
+        sketch.appendChild(this.tmp_canvas)
+
+        // Init Pen tool, width, color
+        this.tool(1)
+        this.changeLineWidth(3)
+        this.changeColor(68, 68, 68)
+        this.drawing = false
+
+        // Fixed line setting
+        this.context.lineCap = 'round'
+        this.context.lineJoin = 'round'
+        this.tmp_context.shadowBlur = 1
+        this.tmp_context.lineCap = 'round'
+        this.tmp_context.lineJoin = 'round'
+
+        // Mouse event
+        this.tmp_canvas.addEventListener('mousedown', this.onMouseDown, false)
+        this.tmp_canvas.addEventListener('mouseup', this.onMouseUp, false)
+        this.tmp_canvas.addEventListener('mouseout', this.onMouseUp, false)
+        this.tmp_canvas.addEventListener('mousemove', this.throttle(this.onMouseMove, 20), false)
+
+        // Touch event (for mobile device)
+        this.tmp_canvas.addEventListener('touchstart', this.onMouseDown, false)
+        this.tmp_canvas.addEventListener('touchend', this.onMouseUp, false)
+        this.tmp_canvas.addEventListener('touchcancel', this.onMouseUp, false)
+        this.tmp_canvas.addEventListener('touchmove', this.throttle(this.onMouseMove, 20), false)
+      },
+      methods: {
+        onMouseDown(e) {
+          this.drawing = true
+
+          // Save starting point
+          this.points.length = 0
+          this.points.push({
+            x: e.clientX || e.touches[0].clientX,
+            y: e.clientY || e.touches[0].clientY
+          })
+        },
+        onMouseUp(e) {
+          this.drawing = false
+
+          // If not an eraser
+          if (this.current.tool !== 3) {
+            // Transfer tmp_canvas to canvas
+            this.context.drawImage(this.tmp_canvas, 0, 0)
+            // Clear tmp_canvas
+            this.tmp_context.clearRect(0, 0, this.tmp_canvas.width, this.tmp_canvas.height)
+          }
+        },
+        onMouseMove(e) {
+          if (!this.drawing) { return }
+
+          // Save line trajectories
+          this.points.push({
+            x: e.clientX || e.touches[0].clientX,
+            y: e.clientY || e.touches[0].clientY
+          })
+
+          if(this.current.tool !== 3) {
+            // For other than eraser
+            this.drawLine(this.points, this.current.line_width, this.current.color.rgba)
+          } else {
+            // For eraser
+            this.eraseLine(this.points, this.current.line_width, this.current.color.rgba)
+          }
+        },
+        throttle(callback, delay) {
+          let previousCall = new Date().getTime()
+          return function () {
+            const time = new Date().getTime()
+
+            if((time - previousCall) >= delay) {
+              previousCall = time
+              callback.apply(null, arguments)
+            }
+          }
+        },
+        drawLine(points, width, color) {
+          let p1 = points[0]
+          let p2 = points[1]
+
+          this.tmp_context.lineWidth = width
+          this.tmp_context.strokeStyle = color
+          this.tmp_context.shadowColor = color
+          
+          // Clear tmp_canvas
+          this.tmp_context.clearRect(0, 0, this.tmp_context.canvas.width, this.tmp_context.canvas.height)
+
+          this.tmp_context.beginPath()
+          this.tmp_context.moveTo(p1.x, p1.y)
+
+          for (let i = 1; i < points.length; i++) {
+            // Take the intermediate coordinates of points
+            let midPoint = this.midPointBtw(p1, p2)
+            // Draw bezier curves
+            this.tmp_context.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y)
+            p1 = points[i]
+            p2 = points[i + 1]
+          }
+          // Draw a straight line between the last point and the point immediately before it
+          // Draw the continuation of the line when the next point is saved
+          this.tmp_context.lineTo(p1.x, p1.y)
+          this.tmp_context.stroke()
+        },
+        eraseLine(points, width, color) {
+          let p1 = points[0]
+          let p2 = points[1]
+
+          this.context.lineWidth = width
+          this.context.strokeStyle = color
+
+          this.context.beginPath()
+          this.context.moveTo(p1.x, p1.y)
+
+          for (let i = 1; i < points.length; i++) {
+            let midPoint = this.midPointBtw(p1, p2)
+            this.context.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y)
+            p1 = points[i]
+            p2 = points[i + 1]
+          }
+          this.context.lineTo(p1.x, p1.y)
+          this.context.stroke()
+        },
+        midPointBtw(p1, p2) {
+          return {
+            x: p1.x + (p2.x - p1.x) / 2,
+            y: p1.y + (p2.y - p1.y) / 2
+          }
+        },
+        onResize() {
+          this.canvas.width = window.innerWidth
+          this.canvas.height = window.innerHeight
+        },
+        tool(tool) {
+          this.current.tool = tool
+          switch (tool) {
+            case 1:
+              // Pen
+              this.tmp_context.globalCompositeOperation = 'source-over'
+              this.context.globalCompositeOperation = 'source-over'
+              this.current.color.a = 0.95
+              this.current.color.rgba = this.toRGBA()
+              break
+            case 2:
+              // Marker
+              this.tmp_context.globalCompositeOperation = 'source-over'
+              this.context.globalCompositeOperation = 'source-over'
+              this.current.color.a = 0.3
+              this.current.color.rgba = this.toRGBA()
+              break
+            case 3:
+              // Eraser
+              this.tmp_context.globalCompositeOperation = 'destination-out'
+              this.context.globalCompositeOperation = 'destination-out'
+              this.current.color.a = 1.0
+              this.current.color.rgba = this.toRGBA()
+              break
+            default:
+              break
+          }
+        },
+        deleteCanvas() {
+          this.context.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        },
+        changeLineWidth(width) {
+          this.current.line_width = width
+        },
+        changeColor(r, g, b) {
+          this.current.color.r = r
+          this.current.color.g = g
+          this.current.color.b = b
+          this.current.color.rgba = this.toRGBA()
+        },
+        toRGBA() {
+          // Convert to rgba(0, 0, 0, 1.0) format
+          const rgba = 'rgba(' + this.current.color.r + ',' + this.current.color.g + ',' + this.current.color.b + ',' + this.current.color.a + ')'
+          return rgba
+        },
+        download() {
+          let a = document.createElement('a')
+          a.href = this.canvas.toDataURL('image/png')
+          a.download = 'download.jpg'
+          a.click()
+        }
+      }
+    })
+  </script>
+</body>
+</html>
