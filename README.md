@@ -18,6 +18,7 @@ ctx.stroke();
 However, if you draw a line with this code, you will get a bad line.
 
 As follows:
+
 ![general_free_line](https://github.com/yokonoji/canvas-smooth-line/blob/master/images_for_readme/general_free_line.png?raw=true)
 
 This is more noticeable the faster you draw. I wasn't happy with this quality, so I searched for a way to draw smooth lines.
